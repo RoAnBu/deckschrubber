@@ -1,0 +1,16 @@
+repositories:
+  - 
+    repo-name-rgx: '^redis$'
+    # Max repo count necessary because of docker registry API restrictions
+    max-repo-count: 1
+    keep-tag-rgx: 'latest'
+    keep-newer:
+      month: 2
+  - 
+    repo-name-rgx: '^prom_custom$'
+    # Max repo count necessary because of docker registry API restrictions
+    max-repo-count: 1
+    keep-tag-rgx: '-prod'
+    keep-newer:
+      year: 0
+      month: 1

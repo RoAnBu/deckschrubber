@@ -3,6 +3,9 @@
 *.a
 *.so
 
+# Build binary
+deckschrubber
+
 # Folders
 _obj
 _test

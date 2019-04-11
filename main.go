@@ -17,14 +17,16 @@ import (
 
 	"regexp"
 
+	"context"
+
 	"golang.org/x/crypto/ssh/terminal"
 
+	"github.com/RoAnBu/deckschrubber/util"
 	log "github.com/Sirupsen/logrus"
-	"github.com/docker/distribution/context"
+	distrContext "github.com/docker/distribution/context"
 	schema2 "github.com/docker/distribution/manifest/schema2"
 	"github.com/docker/distribution/reference"
 	"github.com/docker/distribution/registry/client"
-	"github.com/fraunhoferfokus/deckschrubber/util"
 )
 
 var (
@@ -33,6 +35,8 @@ var (
 	registryURL *string
 	// Regexps for filtering repositories and tags
 	repoRegexpStr, tagRegexpStr, negTagRegexpStr *string
+	// File location for repository configuration file
+	repoFile *string
 	// Maximum age of image to consider for deletion
 	day, month, year *int
 	// Max number of repositories to be fetched from registry
@@ -46,17 +50,26 @@ var (
 	// If true, version is shown and program quits
 	ver *bool
 
-	// Compiled regexps
-	repoRegexp, tagRegexp, negTagRegexp *regexp.Regexp
 	// Skip insecure TLS
 	insecure *bool
 	// Username and password
 	uname, passwd *string
+
+	basicAuthTransport *util.BasicAuthTransport
 )
 
 const (
-	version string = "0.6.0"
+	version string = "0.7.0pre"
 )
+
+type repoEntry struct {
+	repoRegexString string
+	repoRegex       *regexp.Regexp
+	maxRepos        int
+	tagRegex        *regexp.Regexp
+	keepRegex       *regexp.Regexp
+	keepNewer       time.Time
+}
 
 func init() {
 	/** CLI flags */
@@ -78,7 +91,9 @@ func init() {
 	negTagRegexpStr = flag.String("ntag", "", "non matching tags (allows regexp)")
 	// The number of the latest matching images of an repository that won't be deleted
 	latest = flag.Int("latest", 1, "number of the latest matching images of an repository that won't be deleted")
-	// Dry run option (doesn't actually delete)
+	// File location of repo config file
+	repoFile = flag.String("file", "", "A YAML file containing repositories which shall be cleaned")
+	// Show debug log messages
 	debug = flag.Bool("debug", false, "run in debug mode")
 	// Dry run option (doesn't actually delete)
 	dry = flag.Bool("dry", false, "does not actually deletes")
@@ -94,13 +109,6 @@ func init() {
 func main() {
 	flag.Parse()
 
-	// Compile regular expressions
-	repoRegexp = regexp.MustCompile(*repoRegexpStr)
-	tagRegexp = regexp.MustCompile(*tagRegexpStr)
-	if *negTagRegexpStr != "" {
-		negTagRegexp = regexp.MustCompile(*negTagRegexpStr)
-	}
-
 	if *ver {
 		fmt.Printf("Version: %s\n", version)
 		os.Exit(0)
@@ -110,19 +118,18 @@ func main() {
 		log.SetLevel(log.DebugLevel)
 	}
 
-	// Add basic auth if user/pass is provided
-	if *uname != "" && *passwd == "" {
-		fmt.Println("Password:")
-		bytePassword, err := terminal.ReadPassword(int(syscall.Stdin))
-		if err == nil {
-			stringPassword := string(bytePassword[:])
-			passwd = &stringPassword
-		} else {
-			fmt.Println("Could not read password. Quitting!")
-			os.Exit(1)
-		}
+	// List with repositories to clean
+	var repoList []repoEntry
+
+	if *repoFile != "" {
+		repoList = importRepoFile(*repoFile)
+	} else {
+		rEntry := createRepoEntry(*repoRegexpStr, *repoCount, *tagRegexpStr, *negTagRegexpStr, *day, *month, *year)
+		repoList = []repoEntry{rEntry}
 	}
-	basicAuthTransport := util.NewBasicAuthTransport(*registryURL, *uname, *passwd, *insecure)
+
+	// Add basic auth if user/pass is provided
+	setupAuthentication(*uname, *passwd, *insecure)
 
 	// Create registry object
 	r, err := client.NewRegistry(*registryURL, basicAuthTransport)
@@ -130,13 +137,19 @@ func main() {
 		log.Fatalf("Could not create registry object! (err: %s", err)
 	}
 
+	var maxRepos int
+	// calculate max repo value
+	for _, repoStruct := range repoList {
+		maxRepos += repoStruct.maxRepos
+	}
+
 	// List of all repositories fetched from the registry. The number
 	// of fetched repositories depends on the number provided by the
 	// user ('-repos' flag)
-	entries := make([]string, *repoCount)
+	entries := make([]string, maxRepos)
 
 	// Empty context for all requests in sequel
-	ctx := context.Background()
+	ctx := distrContext.Background()
 
 	// Fetch all repositories from the registry
 	numFilled, err := r.Repositories(ctx, entries, "")
@@ -145,11 +158,45 @@ func main() {
 	}
 	log.WithFields(log.Fields{"count": numFilled, "entries": entries}).Info("Successfully fetched repositories.")
 
-	// Deadline defines the youngest creation date for an image
-	// to be considered for deletion
-	deadline := time.Now().AddDate(*year/-1, *month/-1, *day/-1)
+	// loop through all repository expressions
+	for _, repoStruct := range repoList {
+		schrubbRepositories(ctx, entries, numFilled, repoStruct.keepNewer, repoStruct.repoRegex, repoStruct.keepRegex, repoStruct.tagRegex)
+	}
 
-	// Fetch information about images belonging to each repository
+}
+
+func createRepoEntry(repoRexeg string, maxRepos int, tagRegex string, keepRegex string, days int, months int, years int) repoEntry {
+	repoEntry := repoEntry{}
+	repoEntry.repoRegexString = repoRexeg
+	repoEntry.repoRegex = regexp.MustCompile(repoRexeg)
+	repoEntry.maxRepos = maxRepos
+	// Regex for tags which images will be considered for deletion
+	repoEntry.tagRegex = regexp.MustCompile(tagRegex)
+	// Regex for tags which images will never get deleted
+	repoEntry.keepRegex = regexp.MustCompile(keepRegex)
+	// keepNewer defines the youngest creation date for an image
+	// to be considered for deletion
+	repoEntry.keepNewer = time.Now().AddDate(years/-1, months/-1, days/-1)
+	log.Debug("Created Repository entry with content:")
+	log.Debugf("repoRegex: %s, maxRepos: %d, tagRegex: %s, keepRegex: %s, keepNewer: %s", repoRexeg, maxRepos, tagRegex, keepRegex, repoEntry.keepNewer.String())
+	return repoEntry
+}
+
+func importRepoFile(filePath string) []repoEntry {
+	importStruct, err := util.ImportFile(filePath)
+	if err != nil {
+		log.Errorf("An error occurred while trying to import repository file. Error: \n%v", err)
+		os.Exit(1)
+	}
+	repoList := make([]repoEntry, len(importStruct.Repositories))
+	for i, repository := range importStruct.Repositories {
+		repoList[i] = createRepoEntry(repository.RepoNameRegex, repository.MaxRepoCount, ".*", repository.KeepTagRgx,
+			repository.KeepNewer.Day, repository.KeepNewer.Month, repository.KeepNewer.Year)
+	}
+	return repoList
+}
+
+func schrubbRepositories(ctx context.Context, entries []string, numFilled int, deadline time.Time, repoRegexp *regexp.Regexp, negTagRegexp *regexp.Regexp, tagRegexp *regexp.Regexp) {
 	for _, entry := range entries[:numFilled] {
 		logger := log.WithField("repo", entry)
 
@@ -347,4 +394,19 @@ func main() {
 		}
 
 	}
+}
+
+func setupAuthentication(uname string, passwd string, insecure bool) {
+	if uname != "" && passwd == "" {
+		fmt.Println("Password:")
+		bytePassword, err := terminal.ReadPassword(int(syscall.Stdin))
+		if err == nil {
+			stringPassword := string(bytePassword[:])
+			passwd = stringPassword
+		} else {
+			fmt.Println("Could not read password. Quitting!")
+			os.Exit(1)
+		}
+	}
+	basicAuthTransport = util.NewBasicAuthTransport(*registryURL, uname, passwd, insecure)
 }
