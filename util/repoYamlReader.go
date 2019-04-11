@@ -17,6 +17,7 @@ type ImportStruct struct {
 type RepositoryStruct struct {
 	RepoNameRegex string          `yaml:"repo-name-rgx"`
 	MaxRepoCount  int             `yaml:"max-repo-count"`
+	RemoveTagRgx  string          `yaml:"remove-tag-rgx"`
 	KeepTagRgx    string          `yaml:"keep-tag-rgx"`
 	KeepNewer     KeepNewerStruct `yaml:"keep-newer"`
 }

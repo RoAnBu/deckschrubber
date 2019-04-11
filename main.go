@@ -166,14 +166,23 @@ func main() {
 }
 
 func createRepoEntry(repoRexeg string, maxRepos int, tagRegex string, keepRegex string, days int, months int, years int) repoEntry {
+	defaultRgx := ".*"
 	repoEntry := repoEntry{}
 	repoEntry.repoRegexString = repoRexeg
 	repoEntry.repoRegex = regexp.MustCompile(repoRexeg)
+	// TODO handle wrong input
 	repoEntry.maxRepos = maxRepos
 	// Regex for tags which images will be considered for deletion
+	if tagRegex == "" {
+		tagRegex = defaultRgx
+	}
 	repoEntry.tagRegex = regexp.MustCompile(tagRegex)
 	// Regex for tags which images will never get deleted
-	repoEntry.keepRegex = regexp.MustCompile(keepRegex)
+	if keepRegex == "" {
+		repoEntry.keepRegex = nil
+	} else {
+		repoEntry.keepRegex = regexp.MustCompile(keepRegex)
+	}
 	// keepNewer defines the youngest creation date for an image
 	// to be considered for deletion
 	repoEntry.keepNewer = time.Now().AddDate(years/-1, months/-1, days/-1)
@@ -185,12 +194,12 @@ func createRepoEntry(repoRexeg string, maxRepos int, tagRegex string, keepRegex 
 func importRepoFile(filePath string) []repoEntry {
 	importStruct, err := util.ImportFile(filePath)
 	if err != nil {
-		log.Errorf("An error occurred while trying to import repository file. Error: \n%v", err)
+		log.Errorf("An error occurred while trying to import repository file. Error: \n %v", err)
 		os.Exit(1)
 	}
 	repoList := make([]repoEntry, len(importStruct.Repositories))
 	for i, repository := range importStruct.Repositories {
-		repoList[i] = createRepoEntry(repository.RepoNameRegex, repository.MaxRepoCount, ".*", repository.KeepTagRgx,
+		repoList[i] = createRepoEntry(repository.RepoNameRegex, repository.MaxRepoCount, repository.RemoveTagRgx, repository.KeepTagRgx,
 			repository.KeepNewer.Day, repository.KeepNewer.Month, repository.KeepNewer.Year)
 	}
 	return repoList
@@ -203,7 +212,7 @@ func schrubbRepositories(ctx context.Context, entries []string, numFilled int, d
 		matched := repoRegexp.MatchString(entry)
 
 		if !matched {
-			logger.WithFields(log.Fields{"entry": entry}).Debug("Ignore non matching repository (-repo=", *repoRegexpStr, ")")
+			logger.WithFields(log.Fields{"entry": entry}).Debug("Ignore non matching repository (-repo=", (*repoRegexp).String(), ")")
 			continue
 		}
 
