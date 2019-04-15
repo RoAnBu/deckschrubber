@@ -1,6 +1,8 @@
 package util
 
 import (
+	"strconv"
+
 	log "github.com/Sirupsen/logrus"
 
 	"io/ioutil"
@@ -29,7 +31,7 @@ type KeepNewerStruct struct {
 	Day   int `yaml:"day"`
 }
 
-// ImportFile TODO documentation
+// ImportFile reads the given yaml file and parses the fields as provided in repositories_sample.yml
 func ImportFile(filePath string) (ImportStruct, error) {
 	log.Info("Starting yaml file import and parsing")
 	yamlFile, err := ioutil.ReadFile(filePath)
@@ -48,4 +50,21 @@ func ImportFile(filePath string) (ImportStruct, error) {
 	log.Info("Successfully read and parsed yaml.")
 	log.Debugf("Imported content:\n%v", importContent)
 	return importContent, err
+}
+
+// ImportStructToString returns a formatted string with the content of the given import struct
+func ImportStructToString(imp ImportStruct) string {
+	const newLine string = "\n"
+	var result string
+
+	for _, repository := range imp.Repositories {
+		result += "RepoNameRegex: " + repository.RepoNameRegex + newLine
+		result += "MaxRepoCount: " + strconv.Itoa(repository.MaxRepoCount) + newLine
+		result += "RemoveTagRgx: " + repository.RemoveTagRgx + newLine
+		result += "KeepTagRgx: " + repository.KeepTagRgx + newLine
+		result += "Day: " + strconv.Itoa(repository.KeepNewer.Day) + newLine
+		result += "Month: " + strconv.Itoa(repository.KeepNewer.Month) + newLine
+		result += "Year: " + strconv.Itoa(repository.KeepNewer.Year) + newLine + newLine
+	}
+	return result
 }

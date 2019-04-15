@@ -1,0 +1,9 @@
+repositories:
+  - 
+    repo-name-rgx: '^test_repo$'
+    # Max repo count necessary because of docker registry API restrictions
+    max-repo-count: 3
+    remove-tag-rgx: '.*'
+    keep-newer:
+      month: 2
+      year: 6

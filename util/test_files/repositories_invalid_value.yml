@@ -1,0 +1,11 @@
+repositories:
+  - 
+    repo-name-rgx: '^redis$'
+    # Max repo count necessary because of docker registry API restrictions
+    max-repo-count: invalid_value
+    remove-tag-rgx: '.*'
+    keep-tag-rgx: 'latest'
+    keep-newer:
+      month: 2
+      day: 1
+      year: 6
