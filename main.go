@@ -168,10 +168,24 @@ func main() {
 	log.WithFields(log.Fields{"count": numFilled, "entries": entries}).Info("Successfully fetched repositories.")
 
 	// loop through all repository expressions
-	for _, repoStruct := range repoList {
-		schrubbRepositories(ctx, entries, numFilled, repoStruct.keepNewer, repoStruct.repoRegex, repoStruct.keepRegex, repoStruct.tagRegex, repoStruct.keepLatest)
+	tagsDeletionRatioList := make([]map[string]tagsDeletionRatio, len(repoList))
+	for i, repoStruct := range repoList {
+		tagsDeletionRatioList[i] = schrubbRepositories(ctx, entries, numFilled, repoStruct.keepNewer, repoStruct.repoRegex, repoStruct.keepRegex, repoStruct.tagRegex, repoStruct.keepLatest)
 	}
 
+	// Print deletion stats
+	var deleteMsg string
+	if *dry {
+		deleteMsg = "Would delete"
+	} else {
+		deleteMsg = "Deleted"
+	}
+	for _, repoMap := range tagsDeletionRatioList {
+		for repo, stats := range repoMap {
+			log.Infof("%s: \t%s %d out of %d, making it %.2f%%", deleteMsg, repo, stats.deletedTags, stats.totalTags,
+				(float32(stats.deletedTags) / float32(stats.totalTags) * 100.0))
+		}
+	}
 }
 
 func createRepoEntry(repoRexeg string, maxRepos int, tagRegex string, keepRegex string, days int, months int, years int, latest int) (repoEntry, error) {
@@ -233,8 +247,14 @@ func importRepoFile(filePath string) ([]repoEntry, error) {
 	return repoList, nil
 }
 
+type tagsDeletionRatio struct {
+	totalTags   int
+	deletedTags int
+}
+
 func schrubbRepositories(ctx context.Context, entries []string, numFilled int, deadline time.Time, repoRegexp *regexp.Regexp,
-	negTagRegexp *regexp.Regexp, tagRegexp *regexp.Regexp, latest int) {
+	negTagRegexp *regexp.Regexp, tagRegexp *regexp.Regexp, latest int) map[string]tagsDeletionRatio {
+	delStats := make(map[string]tagsDeletionRatio)
 	for _, entry := range entries[:numFilled] {
 		logger := log.WithField("repo", entry)
 
@@ -406,12 +426,14 @@ func schrubbRepositories(ctx context.Context, entries []string, numFilled int, d
 				nonDeletableDigests[tag.Descriptor.Digest.String()] = nonDeletableDigests[tag.Descriptor.Digest.String()] + ", " + tag.Tag
 			}
 		}
-
+		var numDeletedTags int
 		digestsDeleted := make(map[string]bool)
 		for _, tag := range deletableTags {
 			if !digestsDeleted[tag.Descriptor.Digest.String()] {
 				if nonDeletableDigests[tag.Descriptor.Digest.String()] == "" {
+					// TODO Add deletion stats
 					logger.WithField("tag", tag.Tag).Info("All tags for this image digest marked for deletion")
+					numDeletedTags++
 					if !*dry {
 						logger.WithField("tag", tag.Tag).WithField("time", tag.Time).WithField("digest", tag.Descriptor.Digest).Infof("Deleting image (-dry=%v)", *dry)
 						err := manifestService.Delete(context.Background(), tag.Descriptor.Digest)
@@ -430,8 +452,12 @@ func schrubbRepositories(ctx context.Context, entries []string, numFilled int, d
 				logger.WithField("tag", tag.Tag).Debug("Image under tag already deleted")
 			}
 		}
-
+		delStats[entry] = tagsDeletionRatio{
+			len(tagsData),
+			numDeletedTags,
+		}
 	}
+	return delStats
 }
 
 func setupAuthentication(uname string, passwd string, insecure bool) {
