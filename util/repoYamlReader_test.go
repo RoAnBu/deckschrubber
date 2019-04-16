@@ -32,11 +32,9 @@ func TestImportFileSimpleFilled(t *testing.T) {
 
 	if err != nil {
 		t.Fatalf("Got error while parsing filled yaml file: %v", err)
-		t.FailNow()
 	}
 	if len(actualResult.Repositories) != 1 {
-		t.Fatalf("Expected repositories array length of 1 but got %d with content %s", len(actualResult.Repositories), ImportStructToString(actualResult))
-		t.FailNow()
+		t.Errorf("Expected repositories array length of 1 but got %d with content %s", len(actualResult.Repositories), ImportStructToString(actualResult))
 	}
 
 	// Test content
@@ -44,28 +42,26 @@ func TestImportFileSimpleFilled(t *testing.T) {
 	repository := actualResult.Repositories[0]
 
 	if repository.RepoNameRegex != "^test_repo$" {
-		t.Fatalf("Wrong field. Expected: %s got: %s", "^test_repo$", repository.RepoNameRegex)
-		t.Fail()
+		t.Errorf("Wrong field. Expected: %s got: %s", "^test_repo$", repository.RepoNameRegex)
 	}
 
 	if repository.MaxRepoCount != 3 {
-		t.Fatalf("Wrong field. Expected: %d got: %d", 3, repository.MaxRepoCount)
-		t.Fail()
+		t.Errorf("Wrong field. Expected: %d got: %d", 3, repository.MaxRepoCount)
 	}
 
 	if repository.RemoveTagRgx != ".*" {
-		t.Fatalf("Wrong field. Expected: %s got: %s", ".*", repository.RemoveTagRgx)
-		t.Fail()
+		t.Errorf("Wrong field. Expected: %s got: %s", ".*", repository.RemoveTagRgx)
 	}
 
 	if repository.KeepTagRgx != "latest" {
-		t.Fatalf("Wrong field. Expected: %s got: %s", "latest", repository.KeepTagRgx)
-		t.Fail()
+		t.Errorf("Wrong field. Expected: %s got: %s", "latest", repository.KeepTagRgx)
 	}
 
 	if repository.KeepNewer.Day != 1 || repository.KeepNewer.Month != 2 || repository.KeepNewer.Year != 6 {
-		t.Fatalf("Wrong field. Expected: %d, %d, %d got: %d, %d, %d", 1, 2, 6, repository.KeepNewer.Day, repository.KeepNewer.Month, repository.KeepNewer.Year)
-		t.Fail()
+		t.Errorf("Wrong field. Expected: %d, %d, %d got: %d, %d, %d", 1, 2, 6, repository.KeepNewer.Day, repository.KeepNewer.Month, repository.KeepNewer.Year)
+	}
+	if repository.KeepLatest != 5 {
+		t.Errorf("Wrong field. Expected: %d got: %d", 5, repository.KeepLatest)
 	}
 }
 
@@ -109,6 +105,10 @@ func TestImportFileSimpleGaps(t *testing.T) {
 	if repository.KeepNewer.Day != 0 || repository.KeepNewer.Month != 2 || repository.KeepNewer.Year != 6 {
 		t.Fatalf("Wrong field. Expected: %d, %d, %d got: %d, %d, %d", 0, 2, 6, repository.KeepNewer.Day, repository.KeepNewer.Month, repository.KeepNewer.Year)
 		t.Fail()
+	}
+
+	if repository.KeepLatest != 0 {
+		t.Errorf("Wrong field. Expected: %d got: %d", 0, repository.KeepLatest)
 	}
 }
 
@@ -154,6 +154,10 @@ func TestImportFileLong(t *testing.T) {
 		t.Fail()
 	}
 
+	if repository.KeepLatest != 0 {
+		t.Errorf("Wrong field. Expected: %d got: %d", 0, repository.KeepLatest)
+	}
+
 	repository = actualResult.Repositories[1]
 
 	if repository.RepoNameRegex != "^test_repo2$" {
@@ -181,6 +185,10 @@ func TestImportFileLong(t *testing.T) {
 		t.Fail()
 	}
 
+	if repository.KeepLatest != 0 {
+		t.Errorf("Wrong field. Expected: %d got: %d", 0, repository.KeepLatest)
+	}
+
 	repository = actualResult.Repositories[2]
 
 	if repository.RepoNameRegex != "^test_repo3$" {
@@ -206,5 +214,9 @@ func TestImportFileLong(t *testing.T) {
 	if repository.KeepNewer.Day != 0 || repository.KeepNewer.Month != 0 || repository.KeepNewer.Year != 0 {
 		t.Fatalf("Wrong field. Expected: %d, %d, %d got: %d, %d, %d", 0, 0, 0, repository.KeepNewer.Day, repository.KeepNewer.Month, repository.KeepNewer.Year)
 		t.Fail()
+	}
+
+	if repository.KeepLatest != 0 {
+		t.Errorf("Wrong field. Expected: %d got: %d", 0, repository.KeepLatest)
 	}
 }

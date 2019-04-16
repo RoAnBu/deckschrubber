@@ -5,6 +5,7 @@ repositories:
     max-repo-count: 3
     remove-tag-rgx: '.*'
     keep-tag-rgx: 'latest'
+    keep-latest: 5
     keep-newer:
       month: 2
       day: 1

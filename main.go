@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"sort"
 	"strings"
 	"syscall"
@@ -69,6 +70,7 @@ type repoEntry struct {
 	tagRegex        *regexp.Regexp
 	keepRegex       *regexp.Regexp
 	keepNewer       time.Time
+	keepLatest      int
 }
 
 func init() {
@@ -122,9 +124,16 @@ func main() {
 	var repoList []repoEntry
 
 	if *repoFile != "" {
-		repoList = importRepoFile(*repoFile)
+		var err error
+		repoList, err = importRepoFile(*repoFile)
+		if err != nil {
+			log.Fatalf("An error occurred while creating a repository struct. Error: %v", err)
+		}
 	} else {
-		rEntry := createRepoEntry(*repoRegexpStr, *repoCount, *tagRegexpStr, *negTagRegexpStr, *day, *month, *year)
+		rEntry, err := createRepoEntry(*repoRegexpStr, *repoCount, *tagRegexpStr, *negTagRegexpStr, *day, *month, *year, *latest)
+		if err != nil {
+			log.Fatalf("An error occurred while creating a repository struct. Error: %v", err)
+		}
 		repoList = []repoEntry{rEntry}
 	}
 
@@ -160,18 +169,30 @@ func main() {
 
 	// loop through all repository expressions
 	for _, repoStruct := range repoList {
-		schrubbRepositories(ctx, entries, numFilled, repoStruct.keepNewer, repoStruct.repoRegex, repoStruct.keepRegex, repoStruct.tagRegex)
+		schrubbRepositories(ctx, entries, numFilled, repoStruct.keepNewer, repoStruct.repoRegex, repoStruct.keepRegex, repoStruct.tagRegex, repoStruct.keepLatest)
 	}
 
 }
 
-func createRepoEntry(repoRexeg string, maxRepos int, tagRegex string, keepRegex string, days int, months int, years int) repoEntry {
+func createRepoEntry(repoRexeg string, maxRepos int, tagRegex string, keepRegex string, days int, months int, years int, latest int) (repoEntry, error) {
 	defaultRgx := ".*"
+	errorEntry := repoEntry{}
 	repoEntry := repoEntry{}
+	if repoRexeg == "" {
+		return errorEntry, errors.New("Repo Regex can not be empty")
+	}
 	repoEntry.repoRegexString = repoRexeg
+
 	repoEntry.repoRegex = regexp.MustCompile(repoRexeg)
-	// TODO handle wrong input
-	repoEntry.maxRepos = maxRepos
+	if maxRepos < 0 {
+		return errorEntry, fmt.Errorf("Max Repos value for repository %s cannot be negative, was %d", repoRexeg, maxRepos)
+	}
+	if maxRepos == 0 {
+		repoEntry.maxRepos = 1
+	} else {
+		repoEntry.maxRepos = maxRepos
+	}
+
 	// Regex for tags which images will be considered for deletion
 	if tagRegex == "" {
 		tagRegex = defaultRgx
@@ -186,26 +207,34 @@ func createRepoEntry(repoRexeg string, maxRepos int, tagRegex string, keepRegex 
 	// keepNewer defines the youngest creation date for an image
 	// to be considered for deletion
 	repoEntry.keepNewer = time.Now().AddDate(years/-1, months/-1, days/-1)
+
+	// keepLatest is the min number of newest images to keep
+	repoEntry.keepLatest = latest
+
 	log.Debug("Created Repository entry with content:")
-	log.Debugf("repoRegex: %s, maxRepos: %d, tagRegex: %s, keepRegex: %s, keepNewer: %s", repoRexeg, maxRepos, tagRegex, keepRegex, repoEntry.keepNewer.String())
-	return repoEntry
+	log.Debugf("repoRegex: %s, maxRepos: %d, tagRegex: %s, keepRegex: %s, keepNewer: %s, keepLatest: %d",
+		repoRexeg, maxRepos, tagRegex, keepRegex, repoEntry.keepNewer.String(), latest)
+	return repoEntry, nil
 }
 
-func importRepoFile(filePath string) []repoEntry {
+func importRepoFile(filePath string) ([]repoEntry, error) {
 	importStruct, err := util.ImportFile(filePath)
 	if err != nil {
-		log.Errorf("An error occurred while trying to import repository file. Error: \n %v", err)
-		os.Exit(1)
+		log.Fatalf("An error occurred while trying to import repository file. Error: \n %v", err)
 	}
 	repoList := make([]repoEntry, len(importStruct.Repositories))
 	for i, repository := range importStruct.Repositories {
-		repoList[i] = createRepoEntry(repository.RepoNameRegex, repository.MaxRepoCount, repository.RemoveTagRgx, repository.KeepTagRgx,
-			repository.KeepNewer.Day, repository.KeepNewer.Month, repository.KeepNewer.Year)
+		repoList[i], err = createRepoEntry(repository.RepoNameRegex, repository.MaxRepoCount, repository.RemoveTagRgx, repository.KeepTagRgx,
+			repository.KeepNewer.Day, repository.KeepNewer.Month, repository.KeepNewer.Year, repository.KeepLatest)
+		if err != nil {
+			return nil, err
+		}
 	}
-	return repoList
+	return repoList, nil
 }
 
-func schrubbRepositories(ctx context.Context, entries []string, numFilled int, deadline time.Time, repoRegexp *regexp.Regexp, negTagRegexp *regexp.Regexp, tagRegexp *regexp.Regexp) {
+func schrubbRepositories(ctx context.Context, entries []string, numFilled int, deadline time.Time, repoRegexp *regexp.Regexp,
+	negTagRegexp *regexp.Regexp, tagRegexp *regexp.Regexp, latest int) {
 	for _, entry := range entries[:numFilled] {
 		logger := log.WithField("repo", entry)
 
@@ -341,8 +370,8 @@ func schrubbRepositories(ctx context.Context, entries []string, numFilled int, d
 			if matched {
 				tagLogger.Debug(withTagParens("Tag matches, considering for deletion"))
 				if tag.Time.Before(deadline) {
-					if ignoredTags < *latest {
-						tagLogger.WithField("time", tag.Time).Infof("Ignore %d latest matching tags (-latest=%d)", *latest, *latest)
+					if ignoredTags < latest {
+						tagLogger.WithField("time", tag.Time).Infof("Ignore %d latest matching tags (-latest=%d)", latest, latest)
 						ignoredTags++
 					} else {
 						tagLogger.WithField("tag", tag.Tag).WithField("time", tag.Time).Infof("Marking tag as outdated")

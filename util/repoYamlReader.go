@@ -22,6 +22,7 @@ type RepositoryStruct struct {
 	RemoveTagRgx  string          `yaml:"remove-tag-rgx"`
 	KeepTagRgx    string          `yaml:"keep-tag-rgx"`
 	KeepNewer     KeepNewerStruct `yaml:"keep-newer"`
+	KeepLatest    int             `yaml:"keep-latest"`
 }
 
 // KeepNewerStruct TODO
@@ -65,6 +66,7 @@ func ImportStructToString(imp ImportStruct) string {
 		result += "Day: " + strconv.Itoa(repository.KeepNewer.Day) + newLine
 		result += "Month: " + strconv.Itoa(repository.KeepNewer.Month) + newLine
 		result += "Year: " + strconv.Itoa(repository.KeepNewer.Year) + newLine + newLine
+		result += "Latest: " + strconv.Itoa(repository.KeepLatest) + newLine + newLine
 	}
 	return result
 }

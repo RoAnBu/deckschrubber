@@ -1,12 +1,28 @@
+# string fields which are not provided are assumed "", integers are assumed 0
+# Order of the provided fields does not matter
 repositories:
   - 
+    # Regex matching the repositories to be considered
+    # Any-match Regex
+    # Amount of repositories considered limited by value in "max-repo-count"
+    # REQUIRED FIELD
     repo-name-rgx: '^redis$'
-    # Max repo count necessary because of docker registry API restrictions
+    # Max number of repositories which are fetched for the given regex
+    # necessary because of docker registry API restrictions
     max-repo-count: 1
+    # Regex for images which shall be deleted
+    # Assumed .* if not provided
     remove-tag-rgx: '.*'
+    # Regex for images which already matched remove-tag-rgx but should NOT be deleted
     keep-tag-rgx: 'latest'
+    # Keep min number of the newest images which were flagged for deletion
+    keep-latest: 3
+    # Images which are newer than current time + keep-newer won't be deleted
     keep-newer:
+      day: 1
       month: 2
+      year: 0
+  # Add as many repositories as you like
   - 
     repo-name-rgx: '^prom_custom$'
     # Max repo count necessary because of docker registry API restrictions
