@@ -10,12 +10,12 @@ import (
 	"gopkg.in/yaml.v2"
 )
 
-// ImportStruct TODO
+// ImportStruct contains the repository entries imported from the yaml file
 type ImportStruct struct {
 	Repositories []RepositoryStruct `yaml:"repositories"`
 }
 
-// RepositoryStruct TODO
+// RepositoryStruct represents a repository entry of a yaml file
 type RepositoryStruct struct {
 	RepoNameRegex string          `yaml:"repo-name-rgx"`
 	MaxRepoCount  int             `yaml:"max-repo-count"`
@@ -25,7 +25,7 @@ type RepositoryStruct struct {
 	KeepLatest    int             `yaml:"keep-latest"`
 }
 
-// KeepNewerStruct TODO
+// KeepNewerStruct represents the age deadline for images in a repository
 type KeepNewerStruct struct {
 	Year  int `yaml:"year"`
 	Month int `yaml:"month"`

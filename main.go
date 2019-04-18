@@ -431,7 +431,6 @@ func schrubbRepositories(ctx context.Context, entries []string, numFilled int, d
 		for _, tag := range deletableTags {
 			if !digestsDeleted[tag.Descriptor.Digest.String()] {
 				if nonDeletableDigests[tag.Descriptor.Digest.String()] == "" {
-					// TODO Add deletion stats
 					logger.WithField("tag", tag.Tag).Info("All tags for this image digest marked for deletion")
 					numDeletedTags++
 					if !*dry {
