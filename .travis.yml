@@ -2,9 +2,11 @@ language: go
 
 before_script:
  - go get
- - go install github.com/golangci/golangci-lint/cmd/golangci-lint
 
 script:
  - golangci-lint run
  - go test ./...
  - CGO_ENABLED=0 GOOS=linux go build -a .
+
+ notifications:
+  email: false
