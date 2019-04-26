@@ -1,8 +1,7 @@
+max-repos: 23
 repositories:
   - 
     repo-name-rgx: '^test_repo$'
-    # Max repo count necessary because of docker registry API restrictions
-    max-repo-count: 3
     remove-tag-rgx: '.*'
     keep-tag-rgx: 'latest'
     keep-latest: 5

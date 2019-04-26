@@ -3,6 +3,7 @@ package main
 import (
 	"errors"
 	"sort"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -66,7 +67,6 @@ const (
 type repoEntry struct {
 	repoRegexString string
 	repoRegex       *regexp.Regexp
-	maxRepos        int
 	tagRegex        *regexp.Regexp
 	keepRegex       *regexp.Regexp
 	keepNewer       time.Time
@@ -96,9 +96,9 @@ func init() {
 	// File location of repo config file
 	repoFile = flag.String("file", "", "A YAML file containing repositories which shall be cleaned")
 	// Show debug log messages
-	debug = flag.Bool("debug", false, "run in debug mode")
+	debug = flag.Bool("debug", true, "run in debug mode")
 	// Dry run option (doesn't actually delete)
-	dry = flag.Bool("dry", false, "does not actually deletes")
+	dry = flag.Bool("dry", true, "dont actually delete, just show changes. Default: true")
 	// Shows version
 	ver = flag.Bool("v", false, "shows version and quits")
 	// Skip insecure TLS
@@ -120,17 +120,26 @@ func main() {
 		log.SetLevel(log.DebugLevel)
 	}
 
+	importEnvVariables()
+
+	if *debug {
+		log.SetLevel(log.DebugLevel)
+	}
+
 	// List with repositories to clean
 	var repoList []repoEntry
 
+	var maxRepos int
+
 	if *repoFile != "" {
 		var err error
-		repoList, err = importRepoFile(*repoFile)
+		repoList, maxRepos, err = importRepoFile(*repoFile)
 		if err != nil {
 			log.Fatalf("An error occurred while creating a repository struct. Error: %v", err)
 		}
 	} else {
-		rEntry, err := createRepoEntry(*repoRegexpStr, *repoCount, *tagRegexpStr, *negTagRegexpStr, *day, *month, *year, *latest)
+		rEntry, err := createRepoEntry(*repoRegexpStr, *tagRegexpStr, *negTagRegexpStr, *day, *month, *year, *latest)
+		maxRepos = *repoCount
 		if err != nil {
 			log.Fatalf("An error occurred while creating a repository struct. Error: %v", err)
 		}
@@ -141,15 +150,9 @@ func main() {
 	setupAuthentication(*uname, *passwd, *insecure)
 
 	// Create registry object
-	r, err := client.NewRegistry(*registryURL, basicAuthTransport)
+	registry, err := client.NewRegistry(*registryURL, basicAuthTransport)
 	if err != nil {
 		log.Fatalf("Could not create registry object! (err: %s", err)
-	}
-
-	var maxRepos int
-	// calculate max repo value
-	for _, repoStruct := range repoList {
-		maxRepos += repoStruct.maxRepos
 	}
 
 	// List of all repositories fetched from the registry. The number
@@ -161,7 +164,7 @@ func main() {
 	ctx := distrContext.Background()
 
 	// Fetch all repositories from the registry
-	numFilled, err := r.Repositories(ctx, entries, "")
+	numFilled, err := registry.Repositories(ctx, entries, "")
 	if err != nil && err != io.EOF {
 		log.Fatalf("Error while fetching repositories! (err: %v)", err)
 	}
@@ -188,7 +191,7 @@ func main() {
 	}
 }
 
-func createRepoEntry(repoRexeg string, maxRepos int, tagRegex string, keepRegex string, days int, months int, years int, latest int) (repoEntry, error) {
+func createRepoEntry(repoRexeg string, tagRegex string, keepRegex string, days int, months int, years int, latest int) (repoEntry, error) {
 	defaultRgx := ".*"
 	errorEntry := repoEntry{}
 	repoEntry := repoEntry{}
@@ -198,14 +201,6 @@ func createRepoEntry(repoRexeg string, maxRepos int, tagRegex string, keepRegex 
 	repoEntry.repoRegexString = repoRexeg
 
 	repoEntry.repoRegex = regexp.MustCompile(repoRexeg)
-	if maxRepos < 0 {
-		return errorEntry, fmt.Errorf("Max Repos value for repository %s cannot be negative, was %d", repoRexeg, maxRepos)
-	}
-	if maxRepos == 0 {
-		repoEntry.maxRepos = 1
-	} else {
-		repoEntry.maxRepos = maxRepos
-	}
 
 	// Regex for tags which images will be considered for deletion
 	if tagRegex == "" {
@@ -226,25 +221,28 @@ func createRepoEntry(repoRexeg string, maxRepos int, tagRegex string, keepRegex 
 	repoEntry.keepLatest = latest
 
 	log.Debug("Created Repository entry with content:")
-	log.Debugf("repoRegex: %s, maxRepos: %d, tagRegex: %s, keepRegex: %s, keepNewer: %s, keepLatest: %d",
-		repoRexeg, maxRepos, tagRegex, keepRegex, repoEntry.keepNewer.String(), latest)
+	log.Debugf("repoRegex: %s, tagRegex: %s, keepRegex: %s, keepNewer: %s, keepLatest: %d",
+		repoRexeg, tagRegex, keepRegex, repoEntry.keepNewer.String(), latest)
 	return repoEntry, nil
 }
 
-func importRepoFile(filePath string) ([]repoEntry, error) {
+func importRepoFile(filePath string) ([]repoEntry, int, error) {
 	importStruct, err := util.ImportFile(filePath)
 	if err != nil {
 		log.Fatalf("An error occurred while trying to import repository file. Error: \n %v", err)
 	}
+	if importStruct.MaxRepos < 0 {
+		log.Fatalf("Max repositories value in repositories file can not be negative! Got value %d", importStruct.MaxRepos)
+	}
 	repoList := make([]repoEntry, len(importStruct.Repositories))
 	for i, repository := range importStruct.Repositories {
-		repoList[i], err = createRepoEntry(repository.RepoNameRegex, repository.MaxRepoCount, repository.RemoveTagRgx, repository.KeepTagRgx,
+		repoList[i], err = createRepoEntry(repository.RepoNameRegex, repository.RemoveTagRgx, repository.KeepTagRgx,
 			repository.KeepNewer.Day, repository.KeepNewer.Month, repository.KeepNewer.Year, repository.KeepLatest)
 		if err != nil {
-			return nil, err
+			return nil, -1, err
 		}
 	}
-	return repoList, nil
+	return repoList, importStruct.MaxRepos, nil
 }
 
 type tagsDeletionRatio struct {
@@ -472,4 +470,69 @@ func setupAuthentication(uname string, passwd string, insecure bool) {
 		}
 	}
 	basicAuthTransport = util.NewBasicAuthTransport(*registryURL, uname, passwd, insecure)
+}
+
+func importEnvVariables() {
+	// Check for username and password in environment variables
+	envUsername, envUsernameExists := os.LookupEnv("DCR_USERNAME")
+	envPassword, envPasswordExists := os.LookupEnv("DCR_PASSWORD")
+
+	if envUsernameExists {
+		log.Debugf("Found environment variable for registry username")
+		*uname = envUsername
+	} else {
+		log.Debugf("Found no environment variable for registry username")
+	}
+
+	if envPasswordExists {
+		log.Debugf("Found environment variable for registry password")
+		*passwd = envPassword
+	} else {
+		log.Debugf("Found no environment variable for registry password")
+	}
+
+	envRepoFile, envRepoFileExists := os.LookupEnv("DS_REPO_FILE_PATH")
+
+	if envRepoFileExists {
+		log.Debugf("Found environment variable for repo file path with value %s", envRepoFile)
+		*repoFile = envRepoFile
+	} else {
+		log.Debugf("Found no environment variable for repo file path")
+	}
+
+	envRegistryURL, envRegistryURLExists := os.LookupEnv("DCR_URL")
+
+	if envRegistryURLExists {
+		log.Debugf("Found environment variable for registry url with value %s", envRegistryURL)
+		*registryURL = envRegistryURL
+	} else {
+		log.Debugf("Found no environment variable for registry url")
+	}
+
+	envDry, envDryExists := os.LookupEnv("DS_DRY")
+
+	if envDryExists {
+		log.Debugf("Found environment variable for dry with value %s", envDry)
+		var err error
+		*dry, err = strconv.ParseBool(envDry)
+		if err != nil {
+			log.Fatalf("Could not parse env dry %v", err)
+		}
+	} else {
+		log.Debugf("Found no environment variable for dry")
+	}
+
+	envDebug, envDebugExists := os.LookupEnv("DS_DEBUG")
+
+	if envDebugExists {
+		log.Debugf("Found environment variable for debug with value %s", envDebug)
+		var err error
+		*debug, err = strconv.ParseBool(envDebug)
+		if err != nil {
+			log.Fatalf("Could not parse env debug %v", err)
+		}
+	} else {
+		log.Debugf("Found no environment variable for debug")
+	}
+
 }

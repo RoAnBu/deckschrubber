@@ -1,3 +1,7 @@
+# The max number of repositories to load. Can be more than the actual number
+# of repositories. Necessary due to restriction in docker registry client
+# implementation in GO
+max-repos: 100
 # string fields which are not provided are assumed "", integers are assumed 0
 # Order of the provided fields does not matter
 repositories:
@@ -7,9 +11,6 @@ repositories:
     # Amount of repositories considered limited by value in "max-repo-count"
     # REQUIRED FIELD
     repo-name-rgx: '^redis$'
-    # Max number of repositories which are fetched for the given regex
-    # necessary because of docker registry API restrictions
-    max-repo-count: 1
     # Regex for images which shall be deleted
     # Assumed .* if not provided
     remove-tag-rgx: '.*'
@@ -24,9 +25,7 @@ repositories:
       year: 0
   # Add as many repositories as you like
   - 
-    repo-name-rgx: '^prom_custom$'
-    # Max repo count necessary because of docker registry API restrictions
-    max-repo-count: 1
+    repo-name-rgx: '^test-repo-'
     keep-tag-rgx: '-prod'
     keep-newer:
       year: 0

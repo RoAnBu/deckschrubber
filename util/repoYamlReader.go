@@ -12,13 +12,13 @@ import (
 
 // ImportStruct contains the repository entries imported from the yaml file
 type ImportStruct struct {
+	MaxRepos     int                `yaml:"max-repos"`
 	Repositories []RepositoryStruct `yaml:"repositories"`
 }
 
 // RepositoryStruct represents a repository entry of a yaml file
 type RepositoryStruct struct {
 	RepoNameRegex string          `yaml:"repo-name-rgx"`
-	MaxRepoCount  int             `yaml:"max-repo-count"`
 	RemoveTagRgx  string          `yaml:"remove-tag-rgx"`
 	KeepTagRgx    string          `yaml:"keep-tag-rgx"`
 	KeepNewer     KeepNewerStruct `yaml:"keep-newer"`
@@ -60,7 +60,6 @@ func ImportStructToString(imp ImportStruct) string {
 
 	for _, repository := range imp.Repositories {
 		result += "RepoNameRegex: " + repository.RepoNameRegex + newLine
-		result += "MaxRepoCount: " + strconv.Itoa(repository.MaxRepoCount) + newLine
 		result += "RemoveTagRgx: " + repository.RemoveTagRgx + newLine
 		result += "KeepTagRgx: " + repository.KeepTagRgx + newLine
 		result += "Day: " + strconv.Itoa(repository.KeepNewer.Day) + newLine

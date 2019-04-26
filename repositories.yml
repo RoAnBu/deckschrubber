@@ -1,0 +1,4 @@
+# this is the actual repository file which is configured to be compiled
+# into the docker image
+max-repos: 200
+repositories:
